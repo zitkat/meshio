@@ -244,3 +244,106 @@ def _write_data(fh, tag, name, data, binary):
                 fh.write(fmt.format(k + 1, *x).encode("utf-8"))
 
     fh.write("$End{}\n".format(tag).encode("utf-8"))
+
+
+def _write_elementnodedata(fh, name, data,
+                           scheme=None,
+                           ts=None, binary=False):
+    """
+    Writes data as $ElementNodeData, including interpolation
+    scheme (?).
+
+    $ElementNodeData
+      numStringTags(ASCII int)
+      stringTag(string) ...
+      numRealTags(ASCII int)
+      realTag(ASCII double) ...
+      numIntegerTags(ASCII int)
+      integerTag(ASCII int) ...
+      elementTag(size_t) numNodesPerElement(int) value(double) ...
+      ...
+    $EndElementNodeData
+
+    Parameters
+    ----------
+    name : name of data
+    data : DOFs as defined in DG;
+    scheme : dict with interpolation scheme used in data contains :
+        name : name of the scheme,
+        F : coefficients matrix,
+        P : exponents matrix as defined in [1] and [2].
+    ts : time step information, optional
+        Provides data to write time step.
+    binary : ignored
+    """
+
+    if scheme is not None:
+        _write_interpolation_scheme(fh, scheme, binary=binary)
+        scheme_name = scheme["name"]
+    n_el_nod = data.shape[1]
+    fh.write(b"$ElementNodeData\n")
+    fh.write("{}\n".format(1 if scheme_name is None else 2).encode("utf-8"))
+    fh.write('"{}"\n'.format(name).encode("utf-8"))  # name
+    if scheme_name is not None:
+        fh.write('"{}"\n'.format(scheme_name).encode("utf-8"))
+    fh.write(b"1\n")  # number of real tags
+    fh.write("{}\n".format(ts["time"] if ts is not None else 0.0).encode("utf-8"))
+    fh.write(b"3\n")  # number of integer tags
+    fh.write("{}\n".format(ts["step"] if ts is not None else 0).encode("utf-8"))
+    fh.write(b"1\n")  # number of components
+    fh.write("{}\n".format(data.shape[0]).encode("utf-8"))
+    # TODO prepare for binary write, i.e.
+    #  add elementTag and numNodesPerElement to data
+    s = "{} {}" + n_el_nod * " {}" + "\n"
+    for i, el_node_vals in enumerate(data, 1):
+        fh.write(s.format(i, n_el_nod, *el_node_vals).encode("utf-8"))
+    fh.write(b"$EndElementNodeData\n")
+
+
+def _write_interpolation_scheme(fh, scheme, binary):
+    """
+    Unpacks matrices from scheme struct and writes them in correct format
+    for gmsh to read.
+
+    $InterpolationScheme
+      name(string)
+      numElementTopologies(ASCII int)
+      elementTopology
+      numInterpolationMatrices(ASCII int)
+      numRows(ASCII int) numColumns(ASCII int) value(ASCII double) ...
+    $EndInterpolationScheme
+
+    Parameters
+    ----------
+    fh :
+        File opened for writing.
+    scheme : Struct
+        Struct with interpolation scheme used in data
+        contains :
+            name - name of the scheme,
+            F - coeficients matrix,
+            P - exponents matrix as defined in [1] and [2].
+
+
+
+    [1] http://gmsh.info/doc/texinfo/gmsh.html#File-formats
+
+    [2] Remacle, J.-F., Chevaugeon, N., Marchandise, E., & Geuzaine, C. (2007).
+    Efficient visualization of high-order finite elements. International Journal
+    for Numerical Methods in Engineering, 69(4), 750-771.
+    https://doi.org/10.1002/nme.1787
+    """
+    fh.write(b'$InterpolationScheme\n')
+    fh.write('"{}"\n'.format(scheme["name"]).encode("utf-8"))
+    fh.write(b"1\n")  # one int tag
+    fh.write("{}\n".format(scheme["desc"][-1]).encode("utf-8"))
+    fh.write(b"2\n")  # number of matrices
+    fh.write("{} {}\n".format(*scheme["F"].shape).encode("utf-8"))
+    sF = "{} " * scheme["F"].shape[1] + "\n"
+    for row in scheme["F"]:
+        fh.write(sF.format(*row).encode("utf-8"))
+    fh.write("{} {}\n".format(*scheme["P"].shape).encode("utf-8"))
+    sP = "{} " * scheme["P"].shape[1] + "\n"
+    for row in scheme["P"]:
+        fh.write(sP.format(*row).encode("utf-8"))
+    fh.write(b'$EndInterpolationScheme\n')

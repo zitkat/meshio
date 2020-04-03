@@ -20,6 +20,8 @@ from .common import (
     _write_data,
     _write_physical_names,
     num_nodes_per_cell,
+
+    _write_elementnodedata,
 )
 
 c_int = numpy.dtype("i")
@@ -325,6 +327,10 @@ def write4_1(filename, mesh, binary=True):
         for name, dat in cell_data_raw.items():
             _write_data(fh, "ElementData", name, dat, binary)
 
+        for name, dat in mesh.field_data.items():
+            _write_elementnodedata(fh, name, **dat)
+
+
 
 def _write_entities(fh, cells, binary):
     """write the $Entities block
@@ -412,7 +418,7 @@ def _write_nodes(fh, points, cells, binary):
                 "utf-8"
             )
         )
-        numpy.arange(1, 1 + n, dtype=c_size_t).tofile(fh, "\n", "%d")
+        numpy.arange(1, 1 + n, dtype=c_size_t).tofile(fh, "\n", "%d") # TODO this is not how gmsh format works ffs!
         fh.write(b"\n")
         numpy.savetxt(fh, points, delimiter=" ")
 
